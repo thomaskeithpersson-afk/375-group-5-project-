@@ -69,7 +69,13 @@ The scope of the problem is deliberately limited so that the work fits within a 
 
 #### 2.2.3 Constraints
 
-*Constraints are binary, so each one is either satisfied or not. At least four are required, drawn from economic factors, regulatory compliance covering security and access, reliability, sustainability and environmental factors, ethics, and societal impacts.*
+- The design is intended for personal/family finance
+- The application will be designed using free tools and software
+- Uses local server hosting (not intended for large-scale server hosting)
+- Accounts will be in a private database and password protected and encrypted
+- Data will not be shared with third parties
+- The application should be free to use
+- Not designed to do/calculate taxes
 
 ---
 
