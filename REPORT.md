@@ -103,25 +103,123 @@ Each constraint below is binary, which means that the final design either satisf
 
 ## 3 Solution
 
+The team developed three designs in turn, and each one was judged mainly on how easily it could be tested. Design 1 was the quickest idea to build, but it was very hard to test. Design 2 solved its biggest problem by separating the code into a model, a view and a controller, yet it still left several features that made the required testing techniques unreliable. Design 3 removes those remaining problems, so every testing technique required by the project has a clear and isolated part of the code to test.
+
 ### 3.1 Solution 1
 
-*To be completed for the October 8 deliverable.*
+**Description.** In the first design, the whole application is written as a single window class. When the user clicks a button, the code inside that button's event handler reads the values typed into the form, checks them, updates the category totals, decides whether to show a warning, and writes the updated data straight to a text file. All of the program's state is held in the fields of the window itself, so the window is the only place where the data and the rules exist.
+
+```mermaid
+flowchart LR
+    U([User]) --> W["Main window class<br>reads input, validates it,<br>updates totals, shows warnings,<br>writes the data file"]
+    W --> F[(Data file)]
+```
+
+**Deficiencies.** This design is quick to build, but it fails almost every testing requirement of the project, for the following reasons.
+
+| | Deficiency | Effect on testing |
+| --- | --- | --- |
+| D1.1 | The calculation and warning logic sits inside button event handlers. | JUnit cannot call the logic directly, so every test would have to open the window and simulate clicks, which is slow and fragile. |
+| D1.2 | One class does everything, so there are no separate units. | Integration testing is impossible because there are no units to combine, and path and data flow testing must trace paths through interface code as well as the logic. |
+| D1.3 | The handler writes directly to the real data file. | Every test changes the user's real data, and tests can affect one another depending on the order in which they run. |
+| D1.4 | Input is checked in scattered places within the handlers. | Equivalence class and boundary value tests cannot target one validation routine, so it is hard to show that every invalid input class is rejected. |
+| D1.5 | The design does not follow the Model View Controller architecture. | It breaks a requirement of the project description, so the design cannot be accepted. |
 
 ### 3.2 Solution 2
 
-*To be completed for the October 8 deliverable.*
+**Description.** The second design separates the application into a model, a view and a controller, which addresses the main deficiencies of Design 1. The model holds the budget categories and the expenses, the view displays them and collects input, and the controller passes requests from the view to the model. As a result, the calculation logic now lives in ordinary model classes that JUnit can create and call without opening a window, and the units can be combined for integration testing.
+
+```mermaid
+flowchart LR
+    U([User]) --> V["View<br>form, input checks,<br>red colouring when over limit"]
+    V --> C["Controller<br>near limit check"]
+    C --> M["Model<br>categories and expenses,<br>saves itself to file"]
+    M --> F[(Data file)]
+```
+
+**How it addresses Design 1.** Moving the logic into the model solves D1.1, because tests can now call it directly. Splitting the code into three layers solves D1.2 and D1.5, since there are now separate units to integrate and the design follows the required architecture.
+
+**Remaining deficiencies.** Even so, a closer look from the point of view of testing revealed several problems that would make the results of the test suite unreliable.
+
+| | Deficiency | Effect on testing |
+| --- | --- | --- |
+| D2.1 | The model saves itself to the data file whenever it changes. | Every unit test of the model still reads and writes a real file, which makes the tests slow, leaves files behind, and makes it impossible to test the model on its own or to simulate a failed save. |
+| D2.2 | Money is stored using the double type. | Values such as 0.10 cannot be stored exactly, so a total that should equal 80.00 may be stored as 79.999999. Boundary value tests at the 80 percent and 100 percent limits can therefore fail, or pass, for the wrong reason. |
+| D2.3 | The warning logic is split, because the controller checks the 80 percent threshold while the view decides when a category is over its limit. | No single method produces the warning, so a decision table cannot be tested against one unit, and part of the rule can only be checked through the interface. |
+| D2.4 | The state of a category is held in separate true or false flags for near limit and over limit. | Invalid combinations, such as over limit without near limit, are possible, and state transition testing has no explicit set of states to test against. |
+| D2.5 | Input is validated only in the view. | Equivalence class tests must go through the interface, and the model accepts a negative or zero amount if it is called directly. |
+| D2.6 | The model reads the current date from the system clock. | Tests of date filtering and of date validation give different results depending on the day they are run. |
 
 ### 3.3 Final Solution
 
-*To be completed for the December 3 deliverable.*
+**Description.** The final design keeps the separation into model, view and controller from Design 2, but it changes how the parts are connected so that each one can be tested in complete isolation. It overcomes every deficiency of Design 2 through the following changes.
+
+```mermaid
+flowchart LR
+    U([User]) --> V["View<br>displays data,<br>forwards user actions"]
+    V --> C["Controller"]
+    C --> IV["Input validator"]
+    C --> M["Model<br>Category, Expense, Budget,<br>BudgetStatus"]
+    C --> R{{"Repository interface"}}
+    R --> FR["File repository<br>used by the application"]
+    R --> MR["Memory repository<br>used by unit tests"]
+    FR --> F[(Data file)]
+    C --> CL["Clock<br>supplied to the controller"]
+```
+
+| Deficiency in Design 2 | How Design 3 overcomes it |
+| --- | --- |
+| D2.1, the model saves itself to a file | Saving and loading are moved behind a repository interface. The application uses a file repository, whereas unit tests use a repository held in memory, so the model can be tested without touching the disk. The file repository is then tested on its own during integration testing. |
+| D2.2, money is stored as a double | All amounts use the BigDecimal type with two decimal places, so 80 percent of a 100.00 limit is exactly 80.00 and the boundary value tests behave predictably. |
+| D2.3, the warning logic is split | A single method of the Category class compares the amount spent with the limit and returns the status. Because one method makes the whole decision, it can be tested completely with a decision table. |
+| D2.4, the state is held in separate flags | The status is an enumeration with exactly three values, Under Limit, Near Limit and Over Limit. Invalid combinations can no longer exist, and the three values form the states for state transition testing. |
+| D2.5, input is validated only in the view | A separate input validator class checks every entry before the controller passes it to the model, and the model also refuses an amount that is zero or negative. Equivalence class tests can therefore call the validator directly. |
+| D2.6, the model reads the system clock | The controller is given a clock object when it is created, so tests can fix the date to any day they choose. |
+
+In addition, each testing technique required by the project now has a clear target within the design, which is shown in the table below.
+
+| Testing technique | Target in Design 3 |
+| --- | --- |
+| Path testing and data flow testing | The method that records an expense and updates the remaining funds of its category |
+| Integration testing | The controller combined with the model, the input validator and the file repository |
+| Boundary value testing | The status method at 80 percent and at 100 percent of the limit, and the smallest valid amount |
+| Equivalence class testing | The input validator, with valid and invalid classes for the amount, the date and the category |
+| Decision table testing | The status method, using the amount spent and the limit as conditions |
+| State transition testing | The three values of the budget status as expenses are added, edited and deleted |
+| Use case testing | Complete user actions through the controller, such as creating a category and recording an expense |
+
+**Design selection.** To choose between the three designs formally, the team scored each one against the objectives from Section 2.2.2 using a weighted decision matrix. Each design received a score from 1 to 5 for every objective, and the weights reflect the priority of each objective, with correctness and testability weighted most heavily because the main goal of the project is a thoroughly tested product.
+
+| Objective | Weight | Design 1 | Design 2 | Design 3 |
+| --- | --- | --- | --- | --- |
+| O1 Correct | 25 | 2 | 3 | 5 |
+| O2 Testable | 25 | 1 | 3 | 5 |
+| O3 Robust | 15 | 2 | 3 | 5 |
+| O4 Simple | 10 | 4 | 4 | 4 |
+| O5 Private | 10 | 5 | 5 | 5 |
+| O6 Responsive | 5 | 4 | 4 | 4 |
+| O7 Maintainable | 10 | 1 | 3 | 5 |
+| **Weighted total out of 500** | | **225** | **335** | **485** |
+
+The designs were also checked against the constraints from Section 2.2.3. All three satisfy C1, C2, C4, C5 and C6, because none of them uses paid tools, a network connection, tracking or a server. However, only Design 3 satisfies C3, since Design 1 cannot be covered by an automated test suite at all, and Design 2 can still produce an incorrect balance through rounding and still accepts invalid amounts when the model is called directly.
+
+Design 3 is therefore selected as the final design. It scores highest on every objective that depends on the internal structure of the code, and it is the only design that satisfies all six constraints. The scores for simplicity and responsiveness are equal across all three designs, because the user sees the same screens in each one. The cost of Design 3 is a small number of extra classes, which is a reasonable price for a design that can be tested completely.
 
 #### 3.3.1 Components
 
+*To be completed for the December 3 deliverable.*
+
 #### 3.3.2 Environmental, Societal, Safety, and Economic Considerations
+
+*To be completed for the December 3 deliverable.*
 
 #### 3.3.3 Test Cases and Results
 
+*To be completed for the December 3 deliverable.*
+
 #### 3.3.4 Limitations
+
+*To be completed for the December 3 deliverable.*
 
 ---
 
